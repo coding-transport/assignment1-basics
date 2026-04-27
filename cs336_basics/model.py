@@ -1,30 +1,55 @@
 # _*_ coding : UTF-8 _*_
 # @Time : 2026/4/24 18:12
 # @Author : Yif Wang
-# @file : model
+# @file : model.py
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
 from torch import Tensor
+import torch.nn.functional as F
+from typing import Dict
 
 
 class Linear(nn.Module):
-    def __init__(self, d_in, d_out):
+    def __init__(self, d_in: int, d_out: int):
         super().__init__()
-        self.weight = nn.Parameter(torch.randn(d_out, d_in))
+        # 标准命名：weight
+        self.weight = nn.Parameter(torch.empty(d_out, d_in))
+        nn.init.kaiming_uniform_(self.weight, a=5 ** 0.5)
 
-    def set_weight(self, weight):
-        self.weight = weight
-
-    def forward(self, data):
-        result = data @ self.weight.T
-        return result
+    def forward(self, x: Tensor) -> Tensor:
+        return F.linear(x, self.weight)
 
 
 class Embedding(nn.Module):
-    def __int__(self, vocab_size: int, d_model):
-        self.weights = nn.Parameter(torch.randn(vocab_size, d_model))
+    def __init__(self, vocab_size: int, d_model: int):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.d_model = d_model
+        # 标准命名：weight
+        self.weight = nn.Parameter(torch.empty(vocab_size, d_model))
+        nn.init.normal_(self.weight)
 
-    def forward(self, token_ids):
-        return
+
+    def forward(self, token_ids: Tensor) -> Tensor:
+        return F.embedding(token_ids, self.weight)
+
+
+class Swiglu(nn.Module):
+    def __init__(self, d_model: int, d_ff: int):
+        super().__init__()
+        # 命名与主流模型（如 Llama）和你的测试用例对齐
+        self.w1 = nn.Parameter(torch.empty(d_ff, d_model))
+        self.w2 = nn.Parameter(torch.empty(d_model, d_ff))
+        self.w3 = nn.Parameter(torch.empty(d_ff, d_model))
+
+        for p in [self.w1, self.w2, self.w3]:
+            nn.init.kaiming_uniform_(p, a=5 ** 0.5)
+
+
+    def forward(self, x: Tensor) -> Tensor:
+        # SwiGLU: (SiLU(x @ w1.T) * (x @ w3.T)) @ w2.T
+        gate = F.linear(x, self.w1)
+        up = F.linear(x, self.w3)
+        return F.linear(F.silu(gate) * up, self.w2)

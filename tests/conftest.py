@@ -6,19 +6,24 @@ import numpy as np
 import pytest
 import torch
 from torch import Tensor
+from typing import TypeVar, Union, Dict, Optional, Any
 
+# --- 兼容性修改开始 ---
+# 定义泛型变量，以便在旧版本中使用
+A = TypeVar('A', np.ndarray, Tensor)
+# --- 兼容性修改结束 ---
 
 class DEFAULT:
     pass
 
-
-def _canonicalize_array[A: (np.ndarray, Tensor)](arr: A) -> np.ndarray:
+# 修改函数签名，去除 3.12 的 [A: ...] 语法
+def _canonicalize_array(arr: Any) -> np.ndarray:
     if isinstance(arr, Tensor):
         arr = arr.detach().cpu().numpy()
     return arr
 
 
-class NumpySnapshot[A: (np.ndarray, Tensor)]:
+class NumpySnapshot:
     """Snapshot testing utility for NumPy arrays using .npz format."""
 
     def __init__(
@@ -26,7 +31,7 @@ class NumpySnapshot[A: (np.ndarray, Tensor)]:
         snapshot_dir: str = "tests/_snapshots",
         default_force_update: bool = False,
         always_match_exact: bool = False,
-        default_test_name: str | None = None,
+        default_test_name: Optional[str] = None,
     ):
         self.snapshot_dir = Path(snapshot_dir)
         os.makedirs(self.snapshot_dir, exist_ok=True)
@@ -40,20 +45,12 @@ class NumpySnapshot[A: (np.ndarray, Tensor)]:
 
     def assert_match(
         self,
-        actual: A | dict[str, A],
+        actual: Union[Any, Dict[str, Any]],
         rtol: float = 1e-4,
         atol: float = 1e-2,
-        test_name: str | type[DEFAULT] = DEFAULT,
-        force_update: bool | type[DEFAULT] = DEFAULT,
+        test_name: Union[str, type[DEFAULT]] = DEFAULT,
+        force_update: Union[bool, type[DEFAULT]] = DEFAULT,
     ):
-        """
-        Assert that the actual array(s) matches the snapshot.
-
-        Args:
-            actual: Single NumPy array or dictionary of named arrays
-            test_name: The name of the test (used for the snapshot file)
-            update: If True, update the snapshot instead of comparing
-        """
         if force_update is DEFAULT:
             force_update = self.default_force_update
         if self.always_match_exact:
@@ -69,7 +66,10 @@ class NumpySnapshot[A: (np.ndarray, Tensor)]:
         arrays_dict = {k: _canonicalize_array(v) for k, v in arrays_dict.items()}
 
         # Load the snapshot
-        expected_arrays = dict(np.load(snapshot_path))
+        try:
+            expected_arrays = dict(np.load(snapshot_path))
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Snapshot not found at {snapshot_path}. Run with update enabled if needed.")
 
         # Verify all expected arrays are present
         missing_keys = set(arrays_dict.keys()) - set(expected_arrays.keys())
@@ -92,16 +92,13 @@ class NumpySnapshot[A: (np.ndarray, Tensor)]:
             )
 
 
-class Snapshot[A: (np.ndarray, Tensor)]:
+class Snapshot:
     def __init__(
         self,
         snapshot_dir: str = "tests/_snapshots",
         default_force_update: bool = False,
-        default_test_name: str | None = None,
+        default_test_name: Optional[str] = None,
     ):
-        """
-        Snapshot for arbitrary data types, saved as pickle files.
-        """
         self.snapshot_dir = Path(snapshot_dir)
         os.makedirs(self.snapshot_dir, exist_ok=True)
         self.default_force_update = default_force_update
@@ -112,18 +109,10 @@ class Snapshot[A: (np.ndarray, Tensor)]:
 
     def assert_match(
         self,
-        actual: A | dict[str, A],
-        test_name: str | type[DEFAULT] = DEFAULT,
-        force_update: bool | type[DEFAULT] = DEFAULT,
+        actual: Union[Any, Dict[str, Any]],
+        test_name: Union[str, type[DEFAULT]] = DEFAULT,
+        force_update: Union[bool, type[DEFAULT]] = DEFAULT,
     ):
-        """
-        Assert that the actual data matches the snapshot.
-        Args:
-            actual: Single object or dictionary of named objects
-            test_name: The name of the test (used for the snapshot file)
-            force_update: If True, update the snapshot instead of comparing
-        """
-
         if force_update is DEFAULT:
             force_update = self.default_force_update
         if test_name is DEFAULT:
@@ -146,54 +135,28 @@ class Snapshot[A: (np.ndarray, Tensor)]:
         else:
             assert actual == expected_data, f"Data does not match snapshot for {test_name}"
 
+# --- 以下 Fixture 部分基本保持不变 ---
 
 @pytest.fixture
 def snapshot(request):
-    """
-    Fixture providing snapshot testing functionality.
-
-    Usage:
-        def test_my_function(snapshot):
-            result = my_function()
-            snapshot.assert_match(result, "my_test_name")
-    """
     force_update = False
-
-    # Create the snapshot handler with default settings
     snapshot_handler = Snapshot(default_force_update=force_update, default_test_name=request.node.name)
-
     return snapshot_handler
 
 
-# Fixture that can be used in all tests
 @pytest.fixture
 def numpy_snapshot(request):
-    """
-    Fixture providing numpy snapshot testing functionality.
-
-    Usage:
-        def test_my_function(numpy_snapshot):
-            result = my_function()
-            numpy_snapshot.assert_match(result, "my_test_name")
-    """
     force_update = False
-
     match_exact = request.config.getoption("--snapshot-exact", default=False)
-
-    # Create the snapshot handler with default settings
     snapshot = NumpySnapshot(
         default_force_update=force_update, always_match_exact=match_exact, default_test_name=request.node.name
     )
-
     return snapshot
-
 
 @pytest.fixture
 def ts_state_dict(request):
     import json
-
     from .common import FIXTURES_PATH
-
     state_dict = torch.load(FIXTURES_PATH / "ts_tests" / "model.pt", map_location="cpu")
     config = json.load(open(FIXTURES_PATH / "ts_tests" / "model_config.json"))
     state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
