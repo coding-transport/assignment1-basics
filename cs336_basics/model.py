@@ -78,3 +78,14 @@ class Attention(nn.Module):
     def forward(self, data):
         queries = data @ self.q_proj
         keys = data @ self.k_proj
+        values = data @ self.v_proj
+        n = data.size(-1) // self.num_heads
+        results = Tensor([])
+        for i in range(self.num_heads):
+            Q = queries[:, :, i*n:(i+1)*n]
+            K = keys[:, :, i * n:(i + 1) * n]
+            V = values[:, :, i * n:(i + 1) * n]
+            mask = None
+            temp = self.scaled_dot_product_attention(Q, K, V, mask)
+            results = torch.cat((results, temp), dim=-1)
+        return results @ self.o_proj
