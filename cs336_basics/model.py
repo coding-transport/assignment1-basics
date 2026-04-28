@@ -9,8 +9,8 @@ import math
 import torch
 import torch.nn as nn
 from torch import Tensor
-import torch.nn.functional as F
 from typing import Dict
+from cs336_basics.utils import *
 
 
 class Linear(nn.Module):
@@ -21,7 +21,7 @@ class Linear(nn.Module):
         nn.init.kaiming_uniform_(self.weight, a=5 ** 0.5)
 
     def forward(self, x: Tensor) -> Tensor:
-        return F.linear(x, self.weight)
+        return x @ self.weight.T
 
 
 class Embedding(nn.Module):
@@ -33,9 +33,8 @@ class Embedding(nn.Module):
         self.weight = nn.Parameter(torch.empty(vocab_size, d_model))
         nn.init.normal_(self.weight)
 
-
     def forward(self, token_ids: Tensor) -> Tensor:
-        return F.embedding(token_ids, self.weight)
+        return self.weight[token_ids]
 
 
 class Swiglu(nn.Module):
@@ -49,12 +48,12 @@ class Swiglu(nn.Module):
         for p in [self.w1, self.w2, self.w3]:
             nn.init.kaiming_uniform_(p, a=5 ** 0.5)
 
-
     def forward(self, x: Tensor) -> Tensor:
         # SwiGLU: (SiLU(x @ w1.T) * (x @ w3.T)) @ w2.T
-        gate = F.linear(x, self.w1)
-        up = F.linear(x, self.w3)
-        return F.linear(F.silu(gate) * up, self.w2)
+        gate = x @ self.w1.T
+        up = x @ self.w3.T
+        return silu(gate) * up @ self.w2.T
+
 
 class Attention(nn.Module):
     def __init__(self, d_model, num_heads):
@@ -68,7 +67,7 @@ class Attention(nn.Module):
 
     def scaled_dot_product_attention(self, Q, K, V, mask):
         d_k = K.size(-1)
-        scores = Q @ K.transpose(-2, -1)/math.sqrt(d_k)
+        scores = Q @ K.transpose(-2, -1) / math.sqrt(d_k)
         if mask is not None:
             # 确保 mask 为 False 的地方在 softmax 后变为 0
             scores = scores.masked_fill(mask == False, -1e9)
@@ -76,16 +75,25 @@ class Attention(nn.Module):
         return weights @ V
 
     def forward(self, data):
-        queries = data @ self.q_proj
-        keys = data @ self.k_proj
-        values = data @ self.v_proj
-        n = data.size(-1) // self.num_heads
+        queries = data @ self.q_proj.T
+        keys = data @ self.k_proj.T
+        values = data @ self.v_proj.T
+        n = values.size(-1) // self.num_heads
         results = Tensor([])
         for i in range(self.num_heads):
-            Q = queries[:, :, i*n:(i+1)*n]
+            Q = queries[:, :, i * n:(i + 1) * n]
             K = keys[:, :, i * n:(i + 1) * n]
             V = values[:, :, i * n:(i + 1) * n]
-            mask = None
+            mask = self.get_causal_mask(data.size(1))
             temp = self.scaled_dot_product_attention(Q, K, V, mask)
             results = torch.cat((results, temp), dim=-1)
-        return results @ self.o_proj
+        return results @ self.o_proj.T
+
+    def get_causal_mask(self, seq_len):
+        """
+        生成一个上三角矩阵掩码
+        返回 shape: (seq_len, seq_len)
+        """
+        # torch.triu 生成上三角，diagonal=1 表示不包含主对角线
+        mask = (1 - torch.triu(torch.ones(seq_len, seq_len), diagonal=1)).bool()
+        return mask  # True 表示需要被屏蔽的位置
