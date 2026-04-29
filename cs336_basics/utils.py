@@ -24,12 +24,6 @@ def cross_entropy(data, target, dim=-1):
     return torch.mean(log_p_target)
 
 
-def gradient_clip(parameters, max_l2_norm):
-    for k, tensor in parameters:
-        length = torch.sqrt(torch.sum(tensor.grad))
-        tensor.grad = tensor.grad / length * max_l2_norm
-
-
 def save_checkpoint(model, optimizer, iteration, out):
     pass
 
