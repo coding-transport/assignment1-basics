@@ -2,6 +2,8 @@
 # @Time : 2026/4/28 17:03
 # @Author : Yif Wang
 # @file : utils
+import math
+
 import torch
 
 
@@ -23,13 +25,14 @@ def cross_entropy(data, target, dim=-1):
     log_p_target = -prob[torch.arange(batch_size), target]
     return torch.mean(log_p_target)
 
+
 def gradient_clip(parameters, max_l2_norm):
     total_norm_sq = 0
     for tensor in parameters:
         if tensor.grad is not None:
             total_norm_sq += torch.sum(tensor.grad ** 2)
 
-    total_norm = torch.sqrt(total_norm_sq)
+    total_norm = math.sqrt(total_norm_sq)
 
     if total_norm > max_l2_norm:
         clip_coeff = max_l2_norm / (total_norm + 1e-6)
@@ -38,9 +41,19 @@ def gradient_clip(parameters, max_l2_norm):
                 # 使用统一的系数进行缩放
                 tensor.grad.detach().mul_(clip_coeff)
 
+
 def save_checkpoint(model, optimizer, iteration, out):
-    pass
+    checkpoint = {
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'iteration': iteration
+    }
+    torch.save(checkpoint, out)
 
 
 def load_checkpoint(src, model, optimizer):
-    pass
+    checkpoint = torch.load(src, weights_only=False)
+    model.load_state_dict(checkpoint['model'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    start_iteration = checkpoint['iteration']
+    return start_iteration
