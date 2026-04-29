@@ -32,3 +32,7 @@ def gradient_clip(parameters, max_l2_norm):
 
 def save_checkpoint(model, optimizer, iteration, out):
     pass
+
+
+def load_checkpoint(src, model, optimizer):
+    pass
