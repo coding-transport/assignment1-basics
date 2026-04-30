@@ -97,3 +97,16 @@ class Attention(nn.Module):
         # torch.triu 生成上三角，diagonal=1 表示不包含主对角线
         mask = (1 - torch.triu(torch.ones(seq_len, seq_len), diagonal=1)).bool()
         return mask  # True 表示需要被屏蔽的位置
+
+
+class RMSNorm(nn.Module):
+    def __init__(self, d_model, eps):
+        super().__init__()
+        # 标准命名：weight
+        self.weights = nn.Parameter(torch.empty(d_model, ))
+        self.eps = eps
+        nn.init.kaiming_uniform_(self.weights, a=5 ** 0.5)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x_bar = x / torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
+        return x_bar @ self.weights.T
