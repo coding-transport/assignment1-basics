@@ -110,3 +110,24 @@ class RMSNorm(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         x_bar = x / torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
         return x_bar @ self.weights.T
+
+
+class RoPE(nn.Module):
+    def __int__(self, d_k: int, theta: float,
+                max_seq_len: int,):
+        super().__init__()
+        self.d_k = d_k
+        self.theta = theta
+        self.max_seq_len = max_seq_len
+        inv_freq = 1.0 / (self.theta ** (torch.arange(0, self.d_k, 2).float() / self.d_k))
+        t = torch.arange(self.max_seq_len)
+        freqs = torch.einsum("i,j->ij", t, inv_freq)
+
+        # 4. 最后计算 sin 和 cos
+        self.sin_cached = freqs.sin()  # 每一行对应一个位置，每一列对应一对维度
+        self.cos_cached = freqs.cos()
+
+
+
+    def forward(self, in_query_or_key, token_positions):
+        rotate_matrix = torch.empty((self.max_seq_len, self.d_k, self.d_k))
